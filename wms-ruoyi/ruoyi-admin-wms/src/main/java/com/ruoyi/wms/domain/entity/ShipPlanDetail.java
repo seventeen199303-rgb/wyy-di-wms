@@ -1,0 +1,37 @@
+package com.ruoyi.wms.domain.entity;
+
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.ruoyi.common.mybatis.core.domain.BaseEntity;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+import java.io.Serial;
+
+/**
+ * 发货计划明细对象 wms_ship_plan_detail
+ *
+ * @author wangyouyong
+ * @date 2026-09-05
+ */
+@Data
+@EqualsAndHashCode(callSuper = true)
+@TableName("wms_ship_plan_detail")
+public class ShipPlanDetail extends BaseEntity {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    /** 主键 */
+    @TableId(value = "id")
+    private Long id;
+
+    /** 发货计划ID */
+    private Long planId;
+
+    /** 出库单ID */
+    private Long shipmentOrderId;
+
+    /** 出库单号 */
+    private String shipmentOrderNo;
+}

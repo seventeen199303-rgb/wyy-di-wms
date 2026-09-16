@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Frontend (ruo-yi-wms-vue)
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+**/*.log
+
+# Backend (wms-ruoyi)
+target/
+*.log
+logs/
+.idea
+*.iml
+*.iws
+*.ipr
+*.class
+.gradle
+build/
+.vscode
+
+# Local config
+application-local.yml
+application-prod.yml
+.flattened-pom.xml

@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.wms.mapper.ReportMapper">
+
+    <!-- ==================== 库存周转分析 ==================== -->
+    <!--
+      数据口径:
+      - stockQuantity: 当前库存(wms_inventory 按 sku 汇总)
+      - outQuantity:   期间出库量(wms_inventory_history order_type=2 出库,取绝对值)
+      - inQuantity:    期间入库量(order_type=1)
+      - 周转率 = 期间出库量 / 当前库存; 周转天数 = 当前库存 / 日均出库
+    -->
+    <select id="queryTurnover" resultType="com.ruoyi.wms.domain.vo.TurnoverReportVo">
+        select
+            sku.id as sku_id,
+            item.id as item_id,
+            item.item_code,
+            item.item_name,
+            sku.sku_code,
+            sku.sku_name,
+            item.unit,
+            sku.cost_price,
+            ifnull(stock.stock_qty, 0) as stock_quantity,
+            ifnull(outflow.out_qty, 0) as out_quantity,
+            ifnull(inflow.in_qty, 0) as in_quantity
+        from wms_item_sku sku
+        inner join wms_item item on sku.item_id = item.id
+        left join (
+            select sku_id, sum(quantity) as stock_qty
+            from wms_inventory
+            <where>
+                <if test="warehouseId != null">
+                    warehouse_id = #{warehouseId}
+                </if>
+            </where>
+            group by sku_id
+        ) stock on stock.sku_id = sku.id
+        left join (
+            select sku_id, sum(abs(quantity)) as out_qty
+            from wms_inventory_history
+            where order_type = 2
+            <if test="startTime != null">
+                and create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and create_time &lt;= #{endTime}
+            </if>
+            <if test="warehouseId != null">
+                and warehouse_id = #{warehouseId}
+            </if>
+            group by sku_id
+        ) outflow on outflow.sku_id = sku.id
+        left join (
+            select sku_id, sum(quantity) as in_qty
+            from wms_inventory_history
+            where order_type = 1
+            <if test="startTime != null">
+                and create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and create_time &lt;= #{endTime}
+            </if>
+            <if test="warehouseId != null">
+                and warehouse_id = #{warehouseId}
+            </if>
+            group by sku_id
+        ) inflow on inflow.sku_id = sku.id
+        <where>
+            <if test="itemName != null and itemName != ''">
+                item.item_name like concat('%', #{itemName}, '%')
+            </if>
+            and (
+                ifnull(inflow.in_qty, 0) &gt; 0
+                or ifnull(outflow.out_qty, 0) &gt; 0
+                or ifnull(stock.stock_qty, 0) &gt; 0
+            )
+        </where>
+        order by ifnull(outflow.out_qty, 0) desc, sku.id
+    </select>
+
+    <!-- ==================== 出入库统计报表 ==================== -->
+    <!--
+      数据口径:
+      - inQuantity:  期间入库量(order_type=1)
+      - outQuantity: 期间出库量(order_type=2, 取绝对值)
+      - checkQuantity: 期间盘盈盘亏(order_type=4, 正数盘盈负数盘亏)
+      - beginQuantity: 期初库存 = 期末库存 - 期间入库 + 期间出库 - 期间盘盈盘亏
+      - endQuantity:   期末库存 = 当前库存
+    -->
+    <select id="queryFlow" resultType="com.ruoyi.wms.domain.vo.FlowReportVo">
+        select
+            sku.id as sku_id,
+            item.id as item_id,
+            item.item_code,
+            item.item_name,
+            sku.sku_code,
+            sku.sku_name,
+            item.unit,
+            sku.cost_price,
+            ifnull(stock.stock_qty, 0) as end_quantity,
+            ifnull(inflow.in_qty, 0) as in_quantity,
+            ifnull(outflow.out_qty, 0) as out_quantity,
+            ifnull(checkadj.check_qty, 0) as check_quantity,
+            ifnull(stock.stock_qty, 0) - ifnull(inflow.in_qty, 0) + ifnull(outflow.out_qty, 0) - ifnull(checkadj.check_qty, 0) as begin_quantity
+        from wms_item_sku sku
+        inner join wms_item item on sku.item_id = item.id
+        left join (
+            select sku_id, sum(quantity) as stock_qty
+            from wms_inventory
+            <where>
+                <if test="warehouseId != null">
+                    warehouse_id = #{warehouseId}
+                </if>
+            </where>
+            group by sku_id
+        ) stock on stock.sku_id = sku.id
+        left join (
+            select sku_id, sum(quantity) as in_qty
+            from wms_inventory_history
+            where order_type = 1
+            <if test="startTime != null">
+                and create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and create_time &lt;= #{endTime}
+            </if>
+            <if test="warehouseId != null">
+                and warehouse_id = #{warehouseId}
+            </if>
+            group by sku_id
+        ) inflow on inflow.sku_id = sku.id
+        left join (
+            select sku_id, sum(abs(quantity)) as out_qty
+            from wms_inventory_history
+            where order_type = 2
+            <if test="startTime != null">
+                and create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and create_time &lt;= #{endTime}
+            </if>
+            <if test="warehouseId != null">
+                and warehouse_id = #{warehouseId}
+            </if>
+            group by sku_id
+        ) outflow on outflow.sku_id = sku.id
+        left join (
+            select sku_id, sum(quantity) as check_qty
+            from wms_inventory_history
+            where order_type = 4
+            <if test="startTime != null">
+                and create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and create_time &lt;= #{endTime}
+            </if>
+            <if test="warehouseId != null">
+                and warehouse_id = #{warehouseId}
+            </if>
+            group by sku_id
+        ) checkadj on checkadj.sku_id = sku.id
+        <where>
+            <if test="itemName != null and itemName != ''">
+                item.item_name like concat('%', #{itemName}, '%')
+            </if>
+            and (
+                ifnull(inflow.in_qty, 0) &gt; 0
+                or ifnull(outflow.out_qty, 0) &gt; 0
+                or ifnull(stock.stock_qty, 0) &gt; 0
+            )
+        </where>
+        order by ifnull(outflow.out_qty, 0) desc, sku.id
+    </select>
+
+    <!-- ==================== 出入库月度趋势 ==================== -->
+    <select id="queryFlowTrend" resultType="com.ruoyi.wms.domain.vo.FlowTrendVo">
+        select
+            date_format(h.create_time, '%Y-%m') as month,
+            ifnull(sum(case when h.order_type = 1 then h.quantity else 0 end), 0) as in_quantity,
+            ifnull(sum(case when h.order_type = 2 then abs(h.quantity) else 0 end), 0) as out_quantity,
+            round(ifnull(sum(case when h.order_type = 1 then h.quantity * sku.cost_price else 0 end), 0), 2) as in_amount,
+            round(ifnull(sum(case when h.order_type = 2 then abs(h.quantity) * sku.cost_price else 0 end), 0), 2) as out_amount
+        from wms_inventory_history h
+        left join wms_item_sku sku on h.sku_id = sku.id
+        <where>
+            h.order_type in (1, 2)
+            <if test="warehouseId != null">
+                and h.warehouse_id = #{warehouseId}
+            </if>
+            <if test="startTime != null">
+                and h.create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and h.create_time &lt;= #{endTime}
+            </if>
+        </where>
+        group by date_format(h.create_time, '%Y-%m')
+        order by month
+    </select>
+
+    <!-- ==================== 盘点差异报表 ==================== -->
+    <!--
+      数据口径: 盘点明细中 实盘数量(check_quantity) 与 账面数量(quantity) 不一致即为差异
+      盘盈盘亏数量 = check_quantity - quantity (正数盘盈,负数盘亏)
+    -->
+    <select id="queryCheckDiff" resultType="com.ruoyi.wms.domain.vo.CheckReportVo">
+        select
+            co.id as check_order_id,
+            co.order_no,
+            co.order_status,
+            co.create_time,
+            d.id as detail_id,
+            sku.id as sku_id,
+            item.id as item_id,
+            item.item_code,
+            item.item_name,
+            sku.sku_code,
+            sku.sku_name,
+            item.unit,
+            sku.cost_price,
+            d.warehouse_id,
+            w.warehouse_name,
+            z.zone_name,
+            l.location_code,
+            d.quantity,
+            d.check_quantity,
+            (d.check_quantity - d.quantity) as diff_quantity
+        from wms_check_order_detail d
+        inner join wms_check_order co on d.order_id = co.id
+        inner join wms_item_sku sku on d.sku_id = sku.id
+        inner join wms_item item on sku.item_id = item.id
+        left join wms_warehouse w on d.warehouse_id = w.id
+        left join wms_zone z on d.zone_id = z.id
+        left join wms_location l on d.location_id = l.id
+        <where>
+            d.check_quantity is not null
+            and d.check_quantity != d.quantity
+            <if test="warehouseId != null">
+                and d.warehouse_id = #{warehouseId}
+            </if>
+            <if test="itemName != null and itemName != ''">
+                and item.item_name like concat('%', #{itemName}, '%')
+            </if>
+            <if test="startTime != null">
+                and co.create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and co.create_time &lt;= #{endTime}
+            </if>
+        </where>
+        order by co.create_time desc, d.id
+    </select>
+</mapper>
